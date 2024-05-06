@@ -6,7 +6,8 @@ from scenedetect import detect
 from scenedetect.detectors import AdaptiveDetector, ContentDetector, ThresholdDetector
 from scenedetect.video_splitter import split_video_ffmpeg
 from tqdm import tqdm
-from utils import check_video_integrity, get_video_path
+
+from .utils import check_video_integrity, get_video_path
 
 
 class KeyFrameExtractUtils:

@@ -48,14 +48,14 @@ video_name2.mp4,"a pigeon sitting on the street near the house"
 #### Generate video keyframes
 
 ```
-python .scripts/video_cut.py --video_data_path <path-to-videos> --save_dir <path-to-save-keyframes> --task keyframe
+python ./scripts/video_cut.py --video_data_path <path-to-videos> --save_dir <path-to-save-keyframes> --task keyframe
 ```
 > Note: `keyframe_save_dir` defaults to None. If you do not set `keyframe_save_dir`, keyframes will be saved in the `video_data_path` folder
 
 #### cut video scene
 
 ```
-python .scripts/video_cut.py --video_data_path <path-to-videos> --task scene --save_dir <path-to-save-scene> --num_processing 1
+python ./scripts/video_cut.py --video_data_path <path-to-videos> --task scene --save_dir <path-to-save-scene> --num_processing 1
 ```
 > Note:
 
