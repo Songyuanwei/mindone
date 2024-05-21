@@ -89,7 +89,7 @@ def main(args):
         x = data["image"]
         start_time = time.time()
         print(x.shape)
-        z = model.encode(x)
+        z, _, _ = model.encode(x)
         if not args.encode_only:
             recons = model.decode(z)
 
