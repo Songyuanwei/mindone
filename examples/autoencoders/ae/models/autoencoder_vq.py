@@ -120,7 +120,7 @@ class AutoencoderVQ(nn.Cell):
         self.decoder = Decoder(dtype=self.dtype, upcast_sigmoid=upcast_sigmoid, **ddconfig)
         self.quantize = VectorQuantizer(n_embed, embed_dim, beta=0.25, remap=remap, sane_index_shape=sane_index_shape)
         self.quant_conv = nn.Conv2d(
-            2 * ddconfig["z_channels"], 2 * embed_dim, 1, pad_mode="valid", has_bias=True
+            ddconfig["z_channels"], embed_dim, 1, pad_mode="valid", has_bias=True
         ).to_float(self.dtype)
         self.post_quant_conv = nn.Conv2d(
             embed_dim, ddconfig["z_channels"], 1, pad_mode="valid", has_bias=True

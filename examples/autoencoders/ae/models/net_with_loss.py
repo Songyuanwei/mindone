@@ -277,7 +277,7 @@ class VQGeneratorWithLoss(nn.Cell):
                 g_loss = -ops.mean(logits_fake)
                 # TODO: do adaptive weighting based on grad
                 # d_weight = self.calculate_adaptive_weight(mean_nll_loss, g_loss, last_layer=last_layer)
-        loss += d_weight * self.disc_factor * g_loss + self.codebook_weight * codebook_loss.eman()
+        loss += d_weight * self.disc_factor * g_loss + self.codebook_weight * codebook_loss.mean()
         return loss
 
     # in graph mode, construct code will run in graph. TODO: in pynative mode, need to add ms.jit decorator
