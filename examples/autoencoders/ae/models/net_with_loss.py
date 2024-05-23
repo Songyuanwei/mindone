@@ -180,7 +180,7 @@ class DiscriminatorWithLoss(nn.Cell):
         """
 
         # 1. AE forward, get posterior (mean, logvar) and recons
-        recons, mean, logvar = ops.stop_gradient(self.autoencoder(x))
+        recons, mean = ops.stop_gradient(self.autoencoder(x))
 
         # 2. Disc forward to get class prediction on real input and reconstrucions
         if cond is None:
@@ -265,6 +265,8 @@ class VQGeneratorWithLoss(nn.Cell):
 
         # 2.4 discriminator loss if enabled
         # TODO: how to get global_step?
+        g_loss = Tensor([0.0])
+        d_weight = self.disc_weight
         if global_step >= self.disc_start:
             if (self.discriminator is not None) and (self.disc_factor > 0.0):
                 # calc gan loss
@@ -275,8 +277,7 @@ class VQGeneratorWithLoss(nn.Cell):
                 g_loss = -ops.mean(logits_fake)
                 # TODO: do adaptive weighting based on grad
                 # d_weight = self.calculate_adaptive_weight(mean_nll_loss, g_loss, last_layer=last_layer)
-                d_weight = self.disc_weight
-                loss += d_weight * self.disc_factor * g_loss + self.codebook_weight * codebook_loss.eman()
+        loss += d_weight * self.disc_factor * g_loss + self.codebook_weight * codebook_loss.eman()
         return loss
 
     # in graph mode, construct code will run in graph. TODO: in pynative mode, need to add ms.jit decorator

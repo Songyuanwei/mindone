@@ -170,9 +170,9 @@ class AutoencoderVQ(nn.Cell):
         return dec
 
     def construct(self, input):
-        quant, diff, _ = self.encode(input)
+        quant, emb_loss, _ = self.encode(input)
         dec = self.decode(quant)
         # if return_pred_indices:
         #     return dec, diff, ind
 
-        return dec, diff
+        return dec, emb_loss
