@@ -265,7 +265,7 @@ class VQGeneratorWithLoss(nn.Cell):
 
         # 2.4 discriminator loss if enabled
         # TODO: how to get global_step?
-        g_loss = Tensor([0.0])
+        g_loss = 0.0
         d_weight = self.disc_weight
         if global_step >= self.disc_start:
             if (self.discriminator is not None) and (self.disc_factor > 0.0):
