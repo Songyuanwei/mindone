@@ -55,12 +55,8 @@ class VectorQuantizer(nn.Cell):
         assert temp is None or temp == 1.0, "Only for interface compatible with Gumbel"
         assert rescale_logits is False, "Only for interface compatible with Gumbel"
         assert return_logits is False, "Only for interface compatible with Gumbel"
-        # reshape z -> (batch, height, width, channel) and flatten
-        # z = rearrange(z, 'b c h w -> b h w c')
         z = ops.transpose(z, (0, 2, 3, 1))
         z_flattened = z.view(-1, self.e_dim)
-        # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
-        # print(z_flattened.shape)
         d = (
             ops.sum(z_flattened**2, dim=1, keepdim=True)
             + ops.sum(self.embedding.embedding_table**2, dim=1)
@@ -75,16 +71,15 @@ class VectorQuantizer(nn.Cell):
 
         # compute loss for embedding
         if not self.legacy:
-            loss = self.beta * ops.mean((z_q - z) ** 2) + ops.mean((z_q - z) ** 2)
+            loss = self.beta * ops.mean((ops.stop_gradient(z_q) - z) ** 2) + ops.mean((z_q - ops.stop_gradient(z)) ** 2)
         else:
-            loss = ops.mean((z_q - z) ** 2) + self.beta * ops.mean((z_q - z) ** 2)
-        # # preserve gradients
-        # z_q = z + (z_q - z)
+            loss = ops.mean((ops.stop_gradient(z_q) - z) ** 2) + self.beta * ops.mean((z_q - ops.stop_gradient(z)) ** 2)
+
+        # preserve gradients
+        z_q = z + ops.stop_gradient(z_q - z)
 
         # reshape back to match original input shape
-        # z_q = rearrange(z_q, 'b h w c -> b c h w')
-
-        z_q = ops.transpose(z_q, (0, 3, 1, 2))
+        z_q = ops.transpose(z_q, (0, 3, 1, 2)) # (b h w c) -> (b c h w)
         if self.remap is not None:
             min_encoding_indices = min_encoding_indices.reshape(z.shape[0], -1)  # add batch axis
             min_encoding_indices = self.remap_to_used(min_encoding_indices)
