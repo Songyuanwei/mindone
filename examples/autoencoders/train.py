@@ -1,5 +1,5 @@
 """
-Train AutoEncoder KL-reg with GAN loss
+Train AutoEncoder vq-reg with GAN loss
 """
 import logging
 import os
@@ -9,7 +9,7 @@ import time
 
 import yaml
 from ae.data.image_dataset import create_dataloader
-from ae.models.net_with_loss import DiscriminatorWithLoss, GeneratorWithLoss, VQGeneratorWithLoss
+from ae.models.net_with_loss import DiscriminatorWithLoss, VQGeneratorWithLoss
 from omegaconf import OmegaConf
 
 import mindspore as ms
@@ -55,13 +55,15 @@ def create_loss_scaler(loss_scaler_type, init_loss_scale, loss_scale_factor=2, s
 
 def main(args):
     # 1. init
-    # ascend_config={"precision_mode": "allow_fp32_to_fp16"}
     device_id, rank_id, device_num = init_train_env(
         args.mode,
         device_target=args.device_target,
         seed=args.seed,
         distributed=args.use_parallel,
     )
+    if args.global_bf16:
+        ms.set_context(ascend_config={"precision_mode": "allow_mix_precision_bf16"})
+
     set_logger(name="", output_dir=args.output_path, rank=rank_id, log_level=eval(args.log_level))
 
     # 2. build models
@@ -84,15 +86,15 @@ def main(args):
     # TODO: keep sigmoid and softmax FP32 for better precision
     dtype = {"fp16": ms.float16, "bf16": ms.bfloat16, "fp32": ms.float32}[args.dtype]
     if args.dtype != "fp32":
-        ae = auto_mixed_precision(ae, amp_level="O2", dtype=dtype)
-        if use_discriminator:
-            disc = auto_mixed_precision(disc, "O2", dtype=dtype)
-        logger.info(f"Set mixed precision (O2) dtype to {args.dtype}")
+        if not args.global_bf16:
+            ae = auto_mixed_precision(ae, amp_level=args.amp_level, dtype=dtype)
+            if use_discriminator:
+                disc = auto_mixed_precision(disc, amp_level=args.amp_level, dtype=dtype)
+            logger.info(f"Set mixed precision (O2) dtype to {args.dtype}")
 
     # TODO: allow loading pretrained weights
     # 3. build net with loss (core)
     # G with loss
-    # ae_with_loss = GeneratorWithLoss(ae, discriminator=disc, **model_config.lossconfig)
     ae_with_loss = VQGeneratorWithLoss(ae, discriminator=disc, **model_config.lossconfig)
     disc_start = model_config.lossconfig.disc_start
 
@@ -266,7 +268,7 @@ def main(args):
                 ckpt_save_interval=args.ckpt_save_interval,
                 log_interval=args.log_interval,
                 start_epoch=start_epoch,
-                model_name="vae_kl_f8",
+                model_name="vae_vq_f8",
                 record_lr=False,
             )
             callback.append(save_cb)
@@ -331,7 +333,7 @@ def main(args):
             )
             if rank_id == 0:
                 if (cur_epoch % args.ckpt_save_interval == 0) or (cur_epoch == args.epochs):
-                    ckpt_name = f"vae_kl_f8-e{cur_epoch}.ckpt"
+                    ckpt_name = f"vae_vq_f8-e{cur_epoch}.ckpt"
                     if ema is not None:
                         ema.swap_before_eval()
 

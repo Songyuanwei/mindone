@@ -31,7 +31,7 @@ def parse_args():
     )
     parser.add_argument(
         "--model_config",
-        default="configs/train/autoencoder_kl_f8.yaml",
+        default="configs/train/autoencoder_vq_f8.yaml",
         type=str,
         help="model arch config",
     )
@@ -70,6 +70,19 @@ def parse_args():
     )
     parser.add_argument(
         "--dtype", default="fp32", type=str, choices=["fp32", "fp16", "bf16"], help="data type for mixed precision"
+    )
+    parser.add_argument(
+        "--global_bf16",
+        default=False,
+        type=str2bool,
+        help="Experimental. If True, dtype will be overried, operators will be computered in bf16 if they are supported by CANN.",
+    )
+    parser.add_argument(
+        "--amp_level",
+        default="O2",
+        type=str,
+        help="mindspore amp level, O1: most fp32, only layers in whitelist compute in fp16 (dense, conv, etc); \
+            O2: most fp16, only layers in blacklist compute in fp32 (batch norm etc)",
     )
     parser.add_argument("--optim", default="adam", type=str, help="optimizer")
     parser.add_argument(

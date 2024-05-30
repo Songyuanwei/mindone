@@ -27,7 +27,7 @@ from mindone.utils.logger import set_logger
 logger = logging.getLogger(__name__)
 
 
-def postprocess(x, trim=True):
+def postprocess(x):
     pixels = (x + 1) * 127.5
     pixels = np.clip(pixels, 0, 255).astype(np.uint8)
     # b, c, h, w -> b h w c
@@ -50,8 +50,7 @@ def main(args):
 
     config = OmegaConf.load(args.model_config)
     model = instantiate_from_config(config.generator)
-    # model.init_from_ckpt(args.ckpt_path)
-    # logger.info(f"Loaded checkpoint from  {args.ckpt_path}")
+    model.init_from_ckpt(args.ckpt_path)
 
     if args.eval_loss:
         lpips_loss_fn = LPIPS()
@@ -88,7 +87,6 @@ def main(args):
     for step, data in tqdm(enumerate(ds_iter)):
         x = data["image"]
         start_time = time.time()
-        print(x.shape)
         z, _, _ = model.encode(x)
         if not args.encode_only:
             recons = model.decode(z)
@@ -143,12 +141,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model_config",
-        default="configs/autoencoder_kl_f8.yaml",
+        default="configs/autoencoder_vq_f8.yaml",
         type=str,
         help="model architecture config",
     )
     parser.add_argument(
-        "--ckpt_path", default="outputs/vae_train/ckpt/vae_kl_f8-e10.ckpt", type=str, help="checkpoint path"
+        "--ckpt_path", default="outputs/vae_train/ckpt/vae_vq_f8-e10.ckpt", type=str, help="checkpoint path"
     )
     parser.add_argument(
         "--csv_path",
@@ -163,7 +161,7 @@ def parse_args():
     parser.add_argument("--size", default=384, type=int, help="image rescale size")
     parser.add_argument("--crop_size", default=256, type=int, help="image crop size")
 
-    parser.add_argument("--mode", default=0, type=int, help="Specify the mode: 0 for graph mode, 1 for pynative mode")
+    parser.add_argument("--mode", default=1, type=int, help="Specify the mode: 0 for graph mode, 1 for pynative mode")
     parser.add_argument("--device_target", type=str, default="Ascend", help="Ascend or GPU")
     parser.add_argument("--batch_size", default=4, type=int, help="batch size")
     parser.add_argument("--num_parallel_workers", default=8, type=int, help="num workers for data loading")

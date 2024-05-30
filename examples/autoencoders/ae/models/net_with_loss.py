@@ -4,129 +4,6 @@ from mindspore import Tensor, nn, ops
 from .lpips import LPIPS
 
 
-class GeneratorWithLoss(nn.Cell):
-    def __init__(
-        self,
-        autoencoder,
-        disc_start=50001,
-        kl_weight=1.0e-06,
-        disc_weight=0.5,
-        disc_factor=1.0,
-        perceptual_weight=1.0,
-        logvar_init=0.0,
-        discriminator=None,
-        dtype=ms.float32,
-    ):
-        super().__init__()
-
-        # build perceptual models for loss compute
-        self.autoencoder = autoencoder
-        # TODO: set dtype for LPIPS ?
-        self.perceptual_loss = LPIPS()  # freeze params inside
-
-        self.l1 = nn.L1Loss(reduction="none")
-        # TODO: is self.logvar trainable?
-        self.logvar = ms.Parameter(ms.Tensor([logvar_init], dtype=dtype))
-
-        self.disc_start = disc_start
-        self.kl_weight = kl_weight
-        self.disc_weight = disc_weight
-        self.disc_factor = disc_factor
-        self.perceptual_weight = perceptual_weight
-
-        self.discriminator = discriminator
-        # assert discriminator is None, "Discriminator is not supported yet"
-
-    def kl(self, mean, logvar):
-        # cast to fp32 to avoid overflow in exp and sum ops.
-        mean = mean.astype(ms.float32)
-        logvar = logvar.astype(ms.float32)
-
-        var = ops.exp(logvar)
-        kl_loss = 0.5 * ops.sum(
-            ops.pow(mean, 2) + var - 1.0 - logvar,
-            dim=[1, 2, 3],
-        )
-        return kl_loss
-
-    def loss_function(self, x, recons, mean, logvar, global_step: ms.Tensor = -1, weights: ms.Tensor = None, cond=None):
-        bs = x.shape[0]
-
-        # 2.1 reconstruction loss in pixels
-        rec_loss = self.l1(x, recons)
-
-        # 2.2 perceptual loss
-        if self.perceptual_weight > 0:
-            p_loss = self.perceptual_loss(x, recons)
-            rec_loss = rec_loss + self.perceptual_weight * p_loss
-
-        nll_loss = rec_loss / ops.exp(self.logvar) + self.logvar
-        if weights is not None:
-            weighted_nll_loss = weights * nll_loss
-            mean_weighted_nll_loss = weighted_nll_loss.sum() / bs
-            # mean_nll_loss = nll_loss.sum() / bs
-        else:
-            mean_weighted_nll_loss = nll_loss.sum() / bs
-            # mean_nll_loss = mean_weighted_nll_loss
-
-        # 2.3 kl loss
-        kl_loss = self.kl(mean, logvar)
-        kl_loss = kl_loss.sum() / bs
-
-        loss = mean_weighted_nll_loss + self.kl_weight * kl_loss
-
-        # 2.4 discriminator loss if enabled
-        # g_loss = ms.Tensor(0., dtype=ms.float32)
-        # TODO: how to get global_step?
-        if global_step >= self.disc_start:
-            if (self.discriminator is not None) and (self.disc_factor > 0.0):
-                # calc gan loss
-                if cond is None:
-                    logits_fake = self.discriminator(recons)
-                else:
-                    logits_fake = self.discriminator(ops.concat((recons, cond), dim=1))
-                g_loss = -ops.reduce_mean(logits_fake)
-                # TODO: do adaptive weighting based on grad
-                # d_weight = self.calculate_adaptive_weight(mean_nll_loss, g_loss, last_layer=last_layer)
-                d_weight = self.disc_weight
-                loss += d_weight * self.disc_factor * g_loss
-        # print(f"nll_loss: {mean_weighted_nll_loss.asnumpy():.4f}, kl_loss: {kl_loss.asnumpy():.4f}")
-
-        """
-        split = "train"
-        log = {"{}/total_loss".format(split): loss.asnumpy().mean(),
-           "{}/logvar".format(split): self.logvar.value().asnumpy(),
-           "{}/kl_loss".format(split): kl_loss.asnumpy().mean(),
-           "{}/nll_loss".format(split): nll_loss.asnumpy().mean(),
-           "{}/rec_loss".format(split): rec_loss.asnumpy().mean(),
-           # "{}/d_weight".format(split): d_weight.detach(),
-           # "{}/disc_factor".format(split): torch.tensor(disc_factor),
-           # "{}/g_loss".format(split): g_loss.detach().mean(),
-           }
-        for k in log:
-            print(k.split("/")[1], log[k])
-        """
-        # TODO: return more losses
-
-        return loss
-
-    # in graph mode, construct code will run in graph. TODO: in pynative mode, need to add ms.jit decorator
-    def construct(self, x: ms.Tensor, global_step: ms.Tensor = -1, weights: ms.Tensor = None, cond=None):
-        """
-        x: input image/video, (bs c h w)
-        weights: sample weights
-        global_step: global training step
-        """
-
-        # 1. AE forward, get posterior (mean, logvar) and recons
-        recons, mean, logvar = self.autoencoder(x)
-
-        # 2. compuate loss
-        loss = self.loss_function(x, recons, mean, logvar, global_step, weights, cond)
-
-        return loss
-
-
 class DiscriminatorWithLoss(nn.Cell):
     """
     Training logic:
@@ -179,7 +56,7 @@ class DiscriminatorWithLoss(nn.Cell):
             weights: sample weights
         """
 
-        # 1. AE forward, get posterior (mean, logvar) and recons
+        # 1. AE forward
         recons, mean = ops.stop_gradient(self.autoencoder(x))
 
         # 2. Disc forward to get class prediction on real input and reconstrucions
@@ -197,11 +74,6 @@ class DiscriminatorWithLoss(nn.Cell):
             disc_factor = 0.0
 
         d_loss = disc_factor * self.disc_loss(logits_real, logits_fake)
-
-        # log = {"{}/disc_loss".format(split): d_loss.clone().detach().mean(),
-        #        "{}/logits_real".format(split): logits_real.detach().mean(),
-        #       "{}/logits_fake".format(split): logits_fake.detach().mean()
-        #       }
 
         return d_loss
 
@@ -223,7 +95,6 @@ class VQGeneratorWithLoss(nn.Cell):
         n_classes=None,
         pixel_loss="l1",
         discriminator=None,
-        dtype=ms.float32,
     ):
         super().__init__()
 
