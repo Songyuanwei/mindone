@@ -11,6 +11,7 @@ from typing import Optional, Union
 
 import numpy as np
 
+from .utils import str2bool
 import mindspore as ms
 
 

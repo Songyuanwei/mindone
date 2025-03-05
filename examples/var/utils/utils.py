@@ -71,3 +71,10 @@ def load_from_checkpoint(model, ckpt_fp):
     m, u = ms.load_param_into_net(model, param_dict)
     print("net param not load: ", m, len(m))
     print("ckpt param not load: ", u, len(u))
+
+def str2bool(b):
+    if b.lower() not in ["false", "true"]:
+        raise Exception("Invalid Bool Value")
+    if b.lower() in ["false"]:
+        return False
+    return True
