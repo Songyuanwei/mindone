@@ -1,34 +1,31 @@
-import os
 import logging
-import mindspore as ms
-from mindspore import nn, mint
+import os
 from time import time
 
-import mindspore.dataset as ds
-from mindspore.nn.wrap.loss_scale import DynamicLossScaleUpdateCell
-
-
 from models import VAR, VQVAE, build_vae_var
+from utils.arg_util import parse_args
 from utils.data import load_dataset
 from utils.data_sampler import DistInfiniteBatchSampler, EvalDistributedSampler
-from utils.utils import load_from_checkpoint
 from utils.net_with_loss import GeneratorWithLoss
-from utils.arg_util import parse_args
+from utils.utils import load_from_checkpoint
+
+import mindspore as ms
+import mindspore.dataset as ds
+from mindspore import mint, nn
+from mindspore.nn.wrap.loss_scale import DynamicLossScaleUpdateCell
 
 from mindone.trainers.callback import EvalSaveCallback, OverflowMonitor, ProfilerCallback
 from mindone.trainers.checkpoint import CheckpointManager, resume_train_network
 from mindone.trainers.ema import EMA
 from mindone.trainers.lr_schedule import create_scheduler
 from mindone.trainers.optim import create_optimizer
+from mindone.trainers.recorder import PerfRecorder
 from mindone.trainers.train_step import TrainOneStepWrapper
 from mindone.utils.amp import auto_mixed_precision
-from mindone.utils.logger import set_logger
-from mindone.trainers.recorder import PerfRecorder
-from mindone.utils.params import count_params
 from mindone.utils.env import init_train_env
+from mindone.utils.logger import set_logger
+from mindone.utils.params import count_params
 from mindone.utils.seed import set_random_seed
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +55,15 @@ def main(args):
 
     # dataset
     num_classes, dataset_train, dataset_val = load_dataset(
-        args.data_path, final_reso=args.data_load_reso, hflip=args.hflip, mid_reso=args.mid_reso,
+        args.data_path,
+        final_reso=args.data_load_reso,
+        hflip=args.hflip,
+        mid_reso=args.mid_reso,
     )
 
     ld_val = ds.GeneratorDataset(
-        dataset_val, num_workers=0,
+        dataset_val,
+        num_workers=0,
         sampler=EvalDistributedSampler(dataset_val, num_replicas=device_num, rank=rank_id),
         shuffle=False,
     )
@@ -70,11 +71,17 @@ def main(args):
     del dataset_val
 
     ld_train = ds.GeneratorDataset(
-        dataset=dataset_train, num_workers=args.workers,
+        dataset=dataset_train,
+        num_workers=args.workers,
         batch_sampler=DistInfiniteBatchSampler(
-            dataset_len=len(dataset_train), glb_batch_size=args.glb_batch_size,
+            dataset_len=len(dataset_train),
+            glb_batch_size=args.glb_batch_size,
             same_seed_for_all_ranks=args.same_seed_for_all_ranks,
-            shuffle=True, fill_last=True, rank=rank_id, world_size=device_num, start_ep=0,
+            shuffle=True,
+            fill_last=True,
+            rank=rank_id,
+            world_size=device_num,
+            start_ep=0,
             start_it=0,
         ),
     )
@@ -86,11 +93,21 @@ def main(args):
 
     # vae and var
     vae_local, var = build_vae_var(
-        V=4096, Cvae=32, ch=160, share_quant_resi=4,  # hard-coded VQVAE hyperparameters
+        V=4096,
+        Cvae=32,
+        ch=160,
+        share_quant_resi=4,  # hard-coded VQVAE hyperparameters
         patch_nums=args.patch_nums,
-        num_classes=num_classes, depth=args.depth, shared_aln=args.saln, attn_l2_norm=args.anorm,
-        flash_if_available=args.fuse, fused_if_available=args.fuse,
-        init_adaln=args.aln, init_adaln_gamma=args.alng, init_head=args.hd, init_std=args.ini,
+        num_classes=num_classes,
+        depth=args.depth,
+        shared_aln=args.saln,
+        attn_l2_norm=args.anorm,
+        flash_if_available=args.fuse,
+        fused_if_available=args.fuse,
+        init_adaln=args.aln,
+        init_adaln_gamma=args.alng,
+        init_head=args.hd,
+        init_std=args.ini,
     )
     if args.vae_checkpoint:
         load_from_checkpoint(vae_local, args.vae_checkpoint)
@@ -116,7 +133,7 @@ def main(args):
     tot_params, trainable_params = count_params(var_with_loss)
     logger.info("Total params {:,}; Trainable params {:,}".format(tot_params, trainable_params))
 
-    #build lr
+    # build lr
     lr = create_scheduler(
         steps_per_epoch=dataset_size,
         name=args.scheduler,
@@ -166,7 +183,6 @@ def main(args):
         loss_scaler_var.last_overflow_iter = last_overflow_iter
         logger.info(f"Resume training from {resume_ckpt}")
 
-
     training_step_var = TrainOneStepWrapper(
         var_with_loss,
         optimizer=optim_var,
@@ -202,11 +218,11 @@ def main(args):
 
     ds_iter = ld_train.create_tuple_iterator(num_epochs=num_epochs - start_epoch)
 
-    best_L_mean, best_L_tail, best_acc_mean, best_acc_tail = 999., 999., -1., -1.
+    best_L_mean, best_L_tail, best_acc_mean, best_acc_tail = 999.0, 999.0, -1.0, -1.0
     best_val_loss_mean, best_val_loss_tail, best_val_acc_mean, best_val_acc_tail = 999, 999, -1, -1
     prog_wp_it = args.pgwp * dataset_size
     L_mean, L_tail = -1, -1
-    for epoch in range(start_epoch, num_epochs+1):
+    for epoch in range(start_epoch, num_epochs + 1):
         start_time_e = time.time()
         global_step = epoch * dataset_size
         max_step = num_epochs * dataset_size
@@ -224,7 +240,7 @@ def main(args):
                     prog_si = len(args.patch_nums) - 1
                 else:
                     delta = len(args.patch_nums) - 1 - args.pg0
-                    progress = min(max((global_step - wp_it) / (max_step *args.pg - wp_it), 0), 1)
+                    progress = min(max((global_step - wp_it) / (max_step * args.pg - wp_it), 0), 1)
                     prog_si = args.pg0 + round(progress * delta)
             else:
                 prog_si = -1
@@ -239,9 +255,7 @@ def main(args):
             step_time = time.time() - start_time_s
             if step % args.log_interval == 0:
                 loss = float(loss.asnumpy())
-                logger.info(
-                    f"E: {epoch + 1}, S: {step + 1}, Loss: {loss:.4f}, Step time: {step_time * 1000:.2f}ms")
-
+                logger.info(f"E: {epoch + 1}, S: {step + 1}, Loss: {loss:.4f}, Step time: {step_time * 1000:.2f}ms")
 
         epoch_cost = time.time() - start_time_e
         per_step_time = epoch_cost / dataset_size
@@ -259,8 +273,6 @@ def main(args):
                 ckpt_manager.save(var, None, ckpt_name=ckpt_name, append_dict=None)
                 if ema is not None:
                     ema.swap_after_eval()
-
-
 
 
 if __name__ == "__main__":
