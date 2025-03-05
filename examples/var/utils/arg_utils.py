@@ -14,8 +14,7 @@ import numpy as np
 import mindspore as ms
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
+def parse_train_args(parser):
     parser.add_argument(
         "--ms_mode", type=int, default=1, help="Running in GRAPH_MODE(0) or PYNATIVE_MODE(1) (default=1)"
     )
@@ -138,7 +137,7 @@ def parse_args():
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser = parse_args(parser)
+    parser = parse_train_args(parser)
     args = parser.parse_args()
     if args.pn == "256":
         args.pn = "1_2_3_4_5_6_8_10_13_16"
