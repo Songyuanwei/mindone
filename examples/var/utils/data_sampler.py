@@ -1,7 +1,13 @@
+import os
+import sys
 import numpy as np
 
 import mindspore as ms
 from mindspore import mint
+
+__dir__ = os.path.dirname(os.path.abspath(__file__))
+mindone_lib_path = os.path.abspath(os.path.join(__dir__, "../../../"))
+sys.path.insert(0, mindone_lib_path)
 
 from mindone.transformers.mindspore_adapter.data import Sampler
 

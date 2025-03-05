@@ -3,7 +3,7 @@ import os
 from time import time
 
 from models import VAR, VQVAE, build_vae_var
-from utils.arg_util import parse_args
+from utils.arg_utils import parse_args
 from utils.data import load_dataset
 from utils.data_sampler import DistInfiniteBatchSampler, EvalDistributedSampler
 from utils.net_with_loss import GeneratorWithLoss
@@ -69,14 +69,13 @@ def main(args):
     )
     ld_val = ld_val.batch(batch_size=round(args.batch_size * 1.5), drop_remainder=False)
     del dataset_val
-
+    args.glb_batch_size = args.batch_size * device_num
     ld_train = ds.GeneratorDataset(
         dataset=dataset_train,
         num_workers=args.workers,
         batch_sampler=DistInfiniteBatchSampler(
             dataset_len=len(dataset_train),
             glb_batch_size=args.glb_batch_size,
-            same_seed_for_all_ranks=args.same_seed_for_all_ranks,
             shuffle=True,
             fill_last=True,
             rank=rank_id,

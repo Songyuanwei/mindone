@@ -10,7 +10,6 @@ from collections import OrderedDict
 from typing import Optional, Union
 
 import numpy as np
-from tap import Tap
 
 import mindspore as ms
 
@@ -43,18 +42,38 @@ def parse_args():
         help="VAE checkpoint file path which is used to load vae weight.",
     )
     parser.add_argument(
-        "--var_checkpoint",
-        type=str,
-        default="model/var-d16.ckpt",
-        help="VAR checkpoint file path which is used to load var weight.",
-    )
-    parser.add_argument(
         "--dtype",
         default="fp16",
         type=str,
         choices=["bf16", "fp16", "fp32"],
         help="what data type to use for latte. Default is `fp32`, which corresponds to ms.float16",
     )
+    parser.add_argument("--output_path", default="outputs", type=str, help="output path to save training results")
+    parser.add_argument(
+        "--log_level",
+        type=str,
+        default="logging.INFO",
+        help="log level, options: logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR",
+    )
+    parser.add_argument(
+        "--log_interval",
+        default=1,
+        type=int,
+        help="log interval in the unit of data sink size. E.g. if data sink size = 10, log_interval=2, log every 20 steps",
+    )
+    parser.add_argument("--init_loss_scale", default=65536, type=float, help="loss scale")
+    parser.add_argument("--loss_scale_factor", default=2, type=float, help="loss scale factor")
+    parser.add_argument("--scale_window", default=2000, type=float, help="scale window")
+    parser.add_argument("--gradient_accumulation_steps", default=1, type=int, help="gradient accumulation steps")
+    parser.add_argument("--use_ema", default=False, type=str2bool, help="whether use EMA")
+    parser.add_argument(
+        "--ema_decay",
+        default=0.9999,
+        type=float,
+        help="EMA decay ratio, smaller value raises more importance to the current model weight.",
+    )
+    parser.add_argument("--clip_grad", default=False, type=str2bool, help="whether apply gradient clipping")
+
     # data
     parser.add_argument(
         "--data_path",
@@ -64,6 +83,8 @@ def parse_args():
     )
     parser.add_argument("--pn", default="1_2_3_4_5_6_8_10_13_16", type=str, help="patch_nums")
     parser.add_argument("--patch_size", default="16", type=int, help="patch size")
+    parser.add_argument("--mid_reso", default="1.125", type=float, help="aug: first resize to mid_reso = 1.125 * data_load_reso, then crop to data_load_reso, data_load_reso=max(patch_nums) * patch_size")
+    parser.add_argument("--hflip", default="False", type=bool, help="augmentation: horizontal flip")
 
     # VAR
     parser.add_argument("--depth", type=int, default=16, help="VAR depth")
@@ -130,10 +151,12 @@ def parse_args():
     args.data_load_reso = max(args.resos)
 
     if args.wp == 0:
-        args.wp = args.ep * 1 / 50
+        args.wp = args.epoch * 1 / 50
 
     # update args: progressive training
     if args.pgwp == 0:
-        args.pgwp = args.ep * 1 / 300
+        args.pgwp = args.epoch * 1 / 300
     if args.pg > 0:
         args.sche = f"lin{args.pg:g}"
+
+    return args

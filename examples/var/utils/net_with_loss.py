@@ -4,7 +4,7 @@ import mindspore as ms
 from mindspore import dtype as mstype
 from mindspore import mint, nn
 
-from ..models import VAR, VQVAE, VectorQuantizer2
+from models import VAR, VQVAE, VectorQuantizer2
 
 
 class GeneratorWithLoss(nn.Cell):
