@@ -7,19 +7,13 @@ import mindspore as ms
 from time import time
 
 from models import VQVAE, build_vae_var
-from utils.utils import make_grid
+from utils.utils import make_grid, load_from_checkpoint
 from mindone.utils.env import init_train_env
 from mindone.utils.seed import set_random_seed
 from mindone.utils.amp import auto_mixed_precision
 
 
-def load_from_checkpoint(model, ckpt_fp):
-    assert os.path.exists(ckpt_fp), f"checkopint {ckpt_fp} NOT found"
-    print(f"Loading ckpt {ckpt_fp} into network")
-    param_dict = ms.load_checkpoint(ckpt_fp)
-    m, u = ms.load_param_into_net(model, param_dict)
-    print("net param not load: ", m, len(m))
-    print("ckpt param not load: ", u, len(u))
+
 
 
 

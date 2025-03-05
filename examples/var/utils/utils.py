@@ -1,7 +1,8 @@
 from typing import Union, Optional, List, Tuple
 import math
-import mindspore as ms
+import os
 
+import mindspore as ms
 from mindspore import mint, nn
 
 
@@ -65,3 +66,15 @@ def make_grid(
             ).copy_(tensor[k])
             k = k + 1
     return grid
+
+
+def load_from_checkpoint(model, ckpt_fp):
+    assert os.path.exists(ckpt_fp), f"checkopint {ckpt_fp} NOT found"
+    print(f"Loading ckpt {ckpt_fp} into network")
+    param_dict = ms.load_checkpoint(ckpt_fp)
+    if 'quantize.ema_vocab_hit_SV' in param_dict and param_dict['quantize.ema_vocab_hit_SV'].shape[0] != \
+            model.quantize.ema_vocab_hit_SV.shape[0]:
+        param_dict['quantize.ema_vocab_hit_SV'] = model.quantize.ema_vocab_hit_SV
+    m, u = ms.load_param_into_net(model, param_dict)
+    print("net param not load: ", m, len(m))
+    print("ckpt param not load: ", u, len(u))

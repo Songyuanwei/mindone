@@ -11,19 +11,11 @@ from mindspore import mint
 
 from models import VQVAE, build_vae_var
 from utils.data import pil_loader, normalize_01_into_pm1
-from utils.utils import make_grid
+from utils.utils import make_grid, load_from_checkpoint
 from mindone.utils.env import init_train_env
 from mindone.utils.seed import set_random_seed
 from mindone.utils.amp import auto_mixed_precision
 
-
-def load_from_checkpoint(model, ckpt_fp):
-    assert os.path.exists(ckpt_fp), f"checkopint {ckpt_fp} NOT found"
-    print(f"Loading ckpt {ckpt_fp} into network")
-    param_dict = ms.load_checkpoint(ckpt_fp)
-    m, u = ms.load_param_into_net(model, param_dict)
-    print("net param not load: ", m, len(m))
-    print("ckpt param not load: ", u, len(u))
 
 
 def get_edit_mask(patch_nums: List[int], y0: float, x0: float, y1: float, x1: float, inpainting: bool = True) -> ms.Tensor:
