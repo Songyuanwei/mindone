@@ -106,8 +106,11 @@ def get_parameter_dtype(module: nn.Cell) -> ms.Type:
     Returns the first found floating dtype in parameters if there is one, otherwise returns the last dtype it found.
     """
     last_dtype = None
-    for param in module.get_parameters():
+    for name, param in parameter.parameters_and_names():
         last_dtype = param.dtype
+        if parameter._keep_in_fp32_modules and any(m in name for m in parameter._keep_in_fp32_modules):
+            continue
+
         if param.is_floating_point():
             return param.dtype
 

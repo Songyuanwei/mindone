@@ -216,6 +216,8 @@
         title: Transformer2DModel
       - local: api/models/transformer_temporal
         title: TransformerTemporalModel
+      - local: api/models/wan_transformer_3d
+        title: WanTransformer3DModel
       title: Transformers
     - sections:
       - local: api/models/stable_cascade_unet
@@ -244,6 +246,8 @@
         title: AutoencoderKLHunyuanVideo
       - local: api/models/autoencoderkl_ltx_video
         title: AutoencoderKLLTXVideo
+      - local: api/models/autoencoder_kl_wan
+        title: AutoencoderKLWan
       - local: api/models/asymmetricautoencoderkl
         title: AsymmetricAutoencoderKL
       - local: api/models/consistency_decoder_vae
@@ -390,6 +394,8 @@
       title: Stable Diffusion
     - local: api/pipelines/unclip
       title: unCLIP
+    - local: api/pipelines/wan
+      title: Wan
     - local: api/pipelines/wuerstchen
       title: Wuerstchen
     title: Pipelines

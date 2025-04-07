@@ -7,7 +7,7 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
+# distributed under the License is dfistributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -259,6 +259,10 @@ class Attention(nn.Cell):
             elif qk_norm == "rms_norm":
                 self.norm_added_q = RMSNorm(dim_head, eps=eps)
                 self.norm_added_k = RMSNorm(dim_head, eps=eps)
+            elif qk_norm == "rms_norm_across_heads":
+                # Wanx applies qk norm across all heads
+                self.norm_added_q = RMSNorm(dim_head * heads, eps=eps)
+                self.norm_added_k = RMSNorm(dim_head * kv_heads, eps=eps)
             else:
                 raise ValueError(
                     f"unknown qk_norm: {qk_norm}. Should be one of `None,'layer_norm','fp32_layer_norm','rms_norm'`"
