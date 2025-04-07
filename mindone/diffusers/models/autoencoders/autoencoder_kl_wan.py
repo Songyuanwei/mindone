@@ -21,6 +21,7 @@ import mindspore.mint.nn.functional as F
 from ...configuration_utils import ConfigMixin, register_to_config
 from ...utils import logging
 from ..activations import get_activation
+from ..attention import Attention
 from ..modeling_outputs import AutoencoderKLOutput
 from ..modeling_utils import ModelMixin
 from .vae import DecoderOutput, DiagonalGaussianDistribution
@@ -102,9 +103,9 @@ class WanUpsample(mint.nn.Upsample):
     r"""
     Perform upsampling while ensuring the output tensor has the same data type as the input.
     Args:
-        x (torch.Tensor): Input tensor to be upsampled.
+        x (ms.Tensor): Input tensor to be upsampled.
     Returns:
-        torch.Tensor: Upsampled tensor with the same data type as the input.
+        ms.Tensor: Upsampled tensor with the same data type as the input.
     """
 
     def construct(self, x):
@@ -162,7 +163,7 @@ class WanResample(nn.Cell):
                     if cache_x.shape[2] < 2 and feat_cache[idx] is not None and feat_cache[idx] != "Rep":
                         # cache last frame of last two chunk
                         cache_x = mint.cat(
-                            [mint.unsqueeze(feat_cache[idx][:, :, -1, :, :], dim=2), cache_x], dim=2
+                            [feat_cache[idx][:, :, -1, :, :].unsqueeze(2), cache_x], dim=2
                         )
                     if cache_x.shape[2] < 2 and feat_cache[idx] is not None and feat_cache[idx] == "Rep":
                         cache_x = mint.cat([mint.zeros_like(cache_x), cache_x], dim=2)
@@ -177,10 +178,10 @@ class WanResample(nn.Cell):
                     x = mint.stack((x[:, 0, :, :, :, :], x[:, 1, :, :, :, :]), 3)
                     x = mint.reshape(x, (b, c, t * 2, h, w))
         t = x.shape[2]
-        x = mint.reshape(mint.permute(x, (0, 2, 1, 3, 4)), (b * t, c, h, w))
+        x = x.permute((0, 2, 1, 3, 4)).reshape((b * t, c, h, w))
         x = self.resample(x)
         # todo: unavailable mint interface for view
-        x = mint.permute(x.view((b, t, x.shape[1], x.shape[2], x.shape[3])), (0, 2, 1, 3, 4))
+        x = x.view((b, t, x.shape[1], x.shape[2], x.shape[3])).permute((0, 2, 1, 3, 4))
 
         if self.mode == "downsample3d":
             if feat_cache is not None:
@@ -238,7 +239,7 @@ class WanResidualBlock(nn.Cell):
             idx = feat_idx[0]
             cache_x = x[:, :, -CACHE_T:, :, :].clone()
             if cache_x.shape[2] < 2 and feat_cache[idx] is not None:
-                cache_x = mint.cat([mint.unsqueeze(feat_cache[idx][:, :, -1, :, :], dim=2), cache_x], dim=2)
+                cache_x = mint.cat([feat_cache[idx][:, :, -1, :, :].unsqueeze(2), cache_x], dim=2)
 
             x = self.conv1(x, feat_cache[idx])
             feat_cache[idx] = cache_x
@@ -257,7 +258,7 @@ class WanResidualBlock(nn.Cell):
             idx = feat_idx[0]
             cache_x = x[:, :, -CACHE_T:, :, :].clone()
             if cache_x.shape[2] < 2 and feat_cache[idx] is not None:
-                cache_x = mint.cat([mint.unsqueeze(feat_cache[idx][:, :, -1, :, :], dim=2), cache_x], dim=2)
+                cache_x = mint.cat([feat_cache[idx][:, :, -1, :, :].unsqueeze(2), cache_x], dim=2)
 
             x = self.conv2(x, feat_cache[idx])
             feat_cache[idx] = cache_x
@@ -289,17 +290,20 @@ class WanAttentionBlock(nn.Cell):
         identity = x
         batch_size, channels, time, height, width = x.shape
 
-        x = mint.reshape(mint.permute(x, (0, 2, 1, 3, 4)), (batch_size * time, channels, height, width))
+        x = x.permute((0, 2, 1, 3, 4)).reshape((batch_size * time, channels, height, width))
         x = self.norm(x)
 
         # compute query, key, value
         qkv = self.to_qkv(x)
-        qkv = mint.reshape(qkv, (batch_size * time, 1, channels * 3, -1))
-        qkv = mint.permute(qkv, (0, 1, 3, 2)).contiguous()
+        qkv = qkv.reshape((batch_size * time, 1, channels * 3, -1))
+        qkv = qkv.permute((0, 1, 3, 2)).contiguous()
         q, k, v = mint.chunk(qkv, 3, dim=-1)
 
         # apply attention
-        x = F.scaled_dot_product_attention(q, k, v)
+        # x = F.scaled_dot_product_attention(q, k, v)
+        x = Attention.scaled_dot_product_attention(
+            query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False
+        )
 
         x = x.squeeze(1).permute(0, 2, 1).reshape(batch_size * time, channels, height, width)
 
@@ -503,11 +507,11 @@ class WanUpBlock(nn.Cell):
         """
         Forward pass through the upsampling block.
         Args:
-            x (torch.Tensor): Input tensor
+            x (ms.Tensor): Input tensor
             feat_cache (list, optional): Feature cache for causal convolutions
             feat_idx (list, optional): Feature index for cache management
         Returns:
-            torch.Tensor: Output tensor
+            ms.Tensor: Output tensor
         """
         for resnet in self.resnets:
             if feat_cache is not None:
@@ -699,8 +703,8 @@ class AutoencoderKLWan(ModelMixin, ConfigMixin):
         super().__init__()
 
         # Store normalization parameters as tensors
-        self.mean = torch.tensor(latents_mean)
-        self.std = torch.tensor(latents_std)
+        self.mean = ms.tensor(latents_mean)
+        self.std = ms.tensor(latents_std)
         self.scale = mint.stack([self.mean, 1.0 / self.std])  # Shape: [2, C]
 
         self.z_dim = z_dim
@@ -733,7 +737,7 @@ class AutoencoderKLWan(ModelMixin, ConfigMixin):
         self._enc_conv_idx = [0]
         self._enc_feat_map = [None] * self._enc_conv_num
 
-    def _encode(self, x: torch.Tensor) -> torch.Tensor:
+    def _encode(self, x: ms.Tensor) -> ms.Tensor:
         scale = self.scale.type_as(x)
         self.clear_cache()
         ## cache
@@ -760,12 +764,12 @@ class AutoencoderKLWan(ModelMixin, ConfigMixin):
         return enc
 
     def encode(
-        self, x: torch.Tensor, return_dict: bool = True
+        self, x: ms.Tensor, return_dict: bool = True
     ) -> Union[AutoencoderKLOutput, Tuple[DiagonalGaussianDistribution]]:
         r"""
         Encode a batch of images into latents.
         Args:
-            x (`torch.Tensor`): Input batch of images.
+            x (`ms.Tensor`): Input batch of images.
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether to return a [`~models.autoencoder_kl.AutoencoderKLOutput`] instead of a plain tuple.
         Returns:
@@ -778,7 +782,7 @@ class AutoencoderKLWan(ModelMixin, ConfigMixin):
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
 
-    def _decode(self, z: torch.Tensor, scale, return_dict: bool = True) -> Union[DecoderOutput, torch.Tensor]:
+    def _decode(self, z: ms.Tensor, scale, return_dict: bool = True) -> Union[DecoderOutput, ms.Tensor]:
         self.clear_cache()
         # z: [b,c,t,h,w]
         z = z / scale[1].view(1, self.z_dim, 1, 1, 1) + scale[0].view(1, self.z_dim, 1, 1, 1)
@@ -793,18 +797,18 @@ class AutoencoderKLWan(ModelMixin, ConfigMixin):
                 out_ = self.decoder(x[:, :, i : i + 1, :, :], feat_cache=self._feat_map, feat_idx=self._conv_idx)
                 out = mint.cat([out, out_], 2)
 
-        out = torch.clamp(out, min=-1.0, max=1.0)
+        out = mint.clamp(out, min=-1.0, max=1.0)
         self.clear_cache()
         if not return_dict:
             return (out,)
 
         return DecoderOutput(sample=out)
 
-    def decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[DecoderOutput, torch.Tensor]:
+    def decode(self, z: ms.Tensor, return_dict: bool = True) -> Union[DecoderOutput, ms.Tensor]:
         r"""
         Decode a batch of images.
         Args:
-            z (`torch.Tensor`): Input batch of latent vectors.
+            z (`ms.Tensor`): Input batch of latent vectors.
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether to return a [`~models.vae.DecoderOutput`] instead of a plain tuple.
         Returns:
@@ -821,14 +825,14 @@ class AutoencoderKLWan(ModelMixin, ConfigMixin):
 
     def construct(
         self,
-        sample: torch.Tensor,
+        sample: ms.Tensor,
         sample_posterior: bool = False,
         return_dict: bool = True,
-        generator: Optional[torch.Generator] = None,
-    ) -> Union[DecoderOutput, torch.Tensor]:
+        generator: Optional[np.random.Generator] = None,
+    ) -> Union[DecoderOutput, ms.Tensor]:
         """
         Args:
-            sample (`torch.Tensor`): Input sample.
+            sample (`ms.Tensor`): Input sample.
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`DecoderOutput`] instead of a plain tuple.
         """
